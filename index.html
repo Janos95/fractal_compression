@@ -23,6 +23,27 @@
       margin-top: 0;
       font-size: 1.35rem;
     }
+    figure {
+      margin: 1rem 0 0;
+      padding: 0.75rem;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 10px;
+      background: rgba(0,0,0,0.02);
+    }
+    figure img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto 0.5rem;
+    }
+    figure img.intro-diagram {
+      width: 30%;
+    }
+    figure figcaption {
+      font-size: 0.95rem;
+      text-align: center;
+      color: rgba(0,0,0,0.7);
+    }
     canvas, img {
       border: 1px solid rgba(0,0,0,0.2);
       image-rendering: pixelated;
@@ -61,25 +82,42 @@
 <body>
   <section>
     <h2>Fractal Compression</h2>
-    <h3>Background </h3>
+    <h3>Background</h3>
     <p>
-      We think of an image as a vector \( \mathcal{I} = [0,1]^n, n = H * W \) and consider functions on the set of images \( f : \mathcal{I} \to \mathcal{I} \).
-      In this context, f is a contraction if it satisfies \(|f(x) - f(y)| \leq k |x - y|\) for some \(k < 1\). Contractions have 
-      an interesting property that they have a unique fixed point, i.e. there exists a unique \(x^* \in \mathcal{I}\) such that \(f(x^*) = x^*\).
-      Furthmermore for any image \(x \in \mathcal{I}\), the sequence \(x, f(x), f(f(x)), \ldots\) converges to the fixed point \(x^*\).
-      The key idea of fractal compression is to find a contraction a contraction \(f\) for which the fixed point is as close as possible to the 
-      target image. 
-      If such a contraction can be, we can simply store the contraction instead of the image, since iterativly applying the contraction to 
-      any image will converge to the fixed point, i.e the target image.
-      In particular, of we can store such a contraction with less memory than the original image, we effecivelty compress the image into 
-      the contraction.
-      To be a bit more concrete, we subdivide the image into a grid of blocks and look for contractions \(f_i\) which cover the image.
+      We model a grayscale image as a vector \(x \in [0,1]^n\) with \(n = H \times W\) and write \(\mathcal{I} = [0,1]^n\) for the image space.
+      A transform \(f : \mathcal{I} \to \mathcal{I}\) is a contraction when \(|f(x) - f(y)| \leq k |x - y|\) for some \(k < 1\).
+      The <a href="https://en.wikipedia.org/wiki/Banach_fixed-point_theorem" target="_blank" rel="noopener noreferrer">Banach fixed-point theorem</a> then tells us that every contraction admits a unique fixed point \(x^* \in \mathcal{I}\) with \(f(x^*) = x^*\).
+    </p>
+    <p>
+      Moreover, for any starting image \(x \in \mathcal{I}\), the sequence \(x, f(x), f(f(x)), \ldots\) converges to \(x^*\).
+      Fractal compression searches for a contraction \(f\) whose fixed point closely approximates the target image.
+      Once such an \(f\) is found, we store its parameters instead of the pixels, because iteratively applying \(f\) to any seed image converges back to the fixed point.
+      When the description of \(f\) is shorter than the original data, the image is effectively compressed.
+    </p>
+    <p>
+      To make this concrete, we subdivide the image into a grid of blocks and assemble a family of contractions \(f_i\) whose combined action covers the entire image.
+      We refer to the smaller target patches as <em>range</em> blocks, and to the larger source patches from which we reuse detail as <em>domain</em> blocks.
+    </p>
+    <figure>
+      <img class="intro-diagram" src="grid_contraction.svg" alt="Block mapping from a coarse 2×2 domain to a fine 4×4 range" />
+      <figcaption>
+        The arrow illustrates a mapping \(f_i\) from a large domain block onto a smaller range block.
+      </figcaption>
+    </figure>
+    <p>
+      The illustration highlights the core idea: a domain block (one cell in the coarse grid) is contracted onto a range block in the finer grid.
+      For each range block we therefore search for a domain block and a contraction that brings the transformed pixels as close as possible to the target block, ensuring the overall image stays close to the fixed point.
     </p>
     <h3>Implementation</h3>
     <p>
-      In this demo we operate on 512x512 grayscale images by searching, for every 4x4 <em>range</em> block, an 8x8 <em>domain</em> block and an affine intensity fit \(x \mapsto c x + d\).
-      Each candidate domain block can be rotated or reflected using the eight symmetries of the square before being downsampled; we keep the combination that minimizes the mean squared error after applying contrast \(c\) and offset \(d\).
-      The resulting mapping table is what the decompressor iterates, shrinking and rearranging blocks until the full image reappears.
+      This demo instantiates the blockwise contractions described above on 512×512 grayscale images.
+      For every 4×4 <em>range</em> block we examine each candidate 8×8 <em>domain</em> block in the image, downsample it to the range resolution, and enumerate the eight spatial symmetries so every rotated or reflected variant is considered.
+      For each candidate we solve for a simple intensity contraction—contrast \(c\) and offset \(d\)—that minimizes the mean-squared difference between the transformed domain block and the current range block.
+      The parameters with the lowest error define one of the contractions \(f_i\); collecting these local winners yields a global mapping whose fixed point aims to reproduce the source image.
+    </p>
+    <p>
+      We record these choices in a mapping table: each entry remembers the domain index, symmetry, and contrast/offset pair.
+      During decompression the table is iterated repeatedly, with each pass replacing every range block by its contracted domain partner so the noisy seed image converges to the fixed point.
     </p>
   </section>
 
