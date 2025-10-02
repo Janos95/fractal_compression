@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Fractal Compression Demo</title>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
   <style>
     :root {
       color-scheme: light dark;
@@ -58,6 +59,24 @@
   </style>
 </head>
 <body>
+  <section>
+    <h2>Introduction</h2>
+    <h3>Mathematical View</h3>
+    <p>
+      Fractal compression models a grayscale image as a function \(f : [0,1]^2 \to [0,255]\) and seeks a finite set of contractive affine maps \(W_i\) acting on both spatial coordinates and intensity.
+      The decoded image is the unique attractor satisfying \(S = \bigcup_i W_i(S)\), ensured by the Banach fixed-point theorem because each \(W_i\) is contractive under a suitable metric.
+    </p>
+    <p>
+      During decompression, we repeatedly apply the iterated function system to any starting image; the contraction property guarantees that the orbit converges toward \(S\), recreating the stored image even though individual maps are not surjective.
+    </p>
+    <h3>Image Blocks In Practice</h3>
+    <p>
+      In this demo we operate on 512×512 grayscale images by searching, for every 4×4 <em>range</em> block, an 8×8 <em>domain</em> block and an affine intensity fit \(x \mapsto c x + d\).
+      Each candidate domain block can be rotated or reflected using the eight symmetries of the square before being downsampled; we keep the combination that minimizes the mean squared error after applying contrast \(c\) and offset \(d\).
+      The resulting mapping table is what the decompressor iterates, shrinking and rearranging blocks until the full image reappears.
+    </p>
+  </section>
+
   <section>
     <h2>1. Source Image</h2>
     <p>Choose an image (any size); it will be converted to grayscale and resized to 512×512 for compression.</p>
