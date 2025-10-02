@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fractal Compression Demo</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem;
+      display: grid;
+      gap: 1.5rem;
+    }
+    section {
+      border: 1px solid rgba(0,0,0,0.1);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 1.35rem;
+    }
+    canvas, img {
+      border: 1px solid rgba(0,0,0,0.2);
+      image-rendering: pixelated;
+    }
+    #originalPreview {
+      width: 256px;
+      height: 256px;
+      object-fit: contain;
+    }
+    #decompressCanvas {
+      width: 256px;
+      height: 256px;
+    }
+    button {
+      margin-top: 0.75rem;
+      margin-right: 0.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    #status {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+      margin-top: 1rem;
+      max-height: 12rem;
+      overflow-y: auto;
+      border: 1px solid rgba(0,0,0,0.1);
+      padding: 1rem;
+      border-radius: 8px;
+    }
+    #workCanvas {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <section>
+    <h2>1. Source Image</h2>
+    <p>Choose an image (any size); it will be converted to grayscale and resized to 512×512 for compression.</p>
+    <input type="file" id="imageInput" accept="image/*" />
+    <div>
+      <img id="originalPreview" alt="Original preview" />
+    </div>
+  </section>
+
+  <section>
+    <h2>2. Compress</h2>
+    <p>Runs the fractal encoder (8×8 → 4×4 mapping with symmetries &amp; contrast/offset fitting). Result stays in memory.</p>
+    <button id="compressButton" disabled>Compress Image</button>
+  </section>
+
+  <section>
+    <h2>3. Decompress</h2>
+    <p>The canvas starts as random noise. Apply the stored mapping to iterate toward the original image.</p>
+    <div>
+      <canvas id="decompressCanvas" width="512" height="512"></canvas>
+    </div>
+    <div>
+      <button id="iterateButton" disabled>Iterate Once</button>
+      <button id="iterate8Button" disabled>Run 8 Iterations</button>
+      <button id="resetButton" disabled>Reset Noise</button>
+    </div>
+    <div id="iterationLabel">Iterations: 0</div>
+  </section>
+
+  <section>
+    <h2>Status</h2>
+    <div id="status">Load an image to begin.</div>
+  </section>
+
+  <canvas id="workCanvas" width="512" height="512"></canvas>
+
+  <script src="fractal.js"></script>
+  <script>
+    const SIZE = FractalCodec.IMAGE_SIZE;
+
+    const imageInput = document.getElementById('imageInput');
+    const compressButton = document.getElementById('compressButton');
+    const iterateButton = document.getElementById('iterateButton');
+    const iterate8Button = document.getElementById('iterate8Button');
+    const resetButton = document.getElementById('resetButton');
+    const statusBox = document.getElementById('status');
+    const iterationLabel = document.getElementById('iterationLabel');
+    const preview = document.getElementById('originalPreview');
+
+    const workCanvas = document.getElementById('workCanvas');
+    const workCtx = workCanvas.getContext('2d');
+    const decompressCanvas = document.getElementById('decompressCanvas');
+    const decompressCtx = decompressCanvas.getContext('2d');
+
+    let loadedImagePixels = null; // Float64Array of size 512*512
+    let mapping = null;
+    let currentImage = null; // Float64Array for decompression state
+    let iterations = 0;
+
+    function setStatus(text) {
+      statusBox.textContent = text;
+    }
+
+    function appendStatus(text) {
+      statusBox.textContent += `\n${text}`;
+    }
+
+    async function loadImage(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          workCtx.clearRect(0, 0, SIZE, SIZE);
+          workCtx.drawImage(img, 0, 0, SIZE, SIZE);
+          preview.src = workCanvas.toDataURL();
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        img.onerror = (e) => {
+          URL.revokeObjectURL(url);
+          reject(e);
+        };
+        img.src = url;
+      });
+    }
+
+    function extractGrayscalePixels() {
+      const imageData = workCtx.getImageData(0, 0, SIZE, SIZE);
+      const src = imageData.data;
+      const gray = new Float64Array(SIZE * SIZE);
+      for (let i = 0, p = 0; i < src.length; i += 4, p++) {
+        const r = src[i];
+        const g = src[i + 1];
+        const b = src[i + 2];
+        gray[p] = 0.299 * r + 0.587 * g + 0.114 * b;
+      }
+      return gray;
+    }
+
+    function renderCurrentImage() {
+      const imageData = decompressCtx.createImageData(SIZE, SIZE);
+      const dest = imageData.data;
+      for (let i = 0; i < currentImage.length; i++) {
+        const value = Math.max(0, Math.min(255, Math.round(currentImage[i])));
+        const base = i * 4;
+        dest[base] = value;
+        dest[base + 1] = value;
+        dest[base + 2] = value;
+        dest[base + 3] = 255;
+      }
+      decompressCtx.putImageData(imageData, 0, 0);
+      iterationLabel.textContent = `Iterations: ${iterations}`;
+    }
+
+    function resetDecompressImage() {
+      currentImage = new Float64Array(SIZE * SIZE);
+      for (let i = 0; i < currentImage.length; i++) {
+        currentImage[i] = Math.random() * 255;
+      }
+      iterations = 0;
+      renderCurrentImage();
+      appendStatus('Decompression buffer reset to random noise.');
+    }
+
+    async function handleCompress() {
+      if (!loadedImagePixels) {
+        return;
+      }
+      setStatus('Compressing...');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const start = performance.now();
+      mapping = FractalCodec.compressFromPixels(loadedImagePixels);
+      const duration = (performance.now() - start) / 1000;
+      appendStatus(`Compression complete in ${duration.toFixed(2)} seconds.`);
+      iterateButton.disabled = false;
+      iterate8Button.disabled = false;
+      resetButton.disabled = false;
+      resetDecompressImage();
+    }
+
+    function iterateOnce() {
+      if (!mapping || !currentImage) {
+        return;
+      }
+      currentImage = FractalCodec.iterate(currentImage, mapping);
+      iterations += 1;
+      renderCurrentImage();
+    }
+
+    function iterateEight() {
+      if (!mapping || !currentImage) {
+        return;
+      }
+      const start = performance.now();
+      for (let i = 0; i < 8; i++) {
+        currentImage = FractalCodec.iterate(currentImage, mapping);
+        iterations += 1;
+      }
+      renderCurrentImage();
+      const duration = (performance.now() - start) / 1000;
+      appendStatus(`Ran 8 iterations in ${duration.toFixed(2)} seconds.`);
+    }
+
+    imageInput.addEventListener('change', async (event) => {
+      const [file] = event.target.files;
+      if (!file) {
+        setStatus('Load an image to begin.');
+        compressButton.disabled = true;
+        return;
+      }
+      setStatus('Loading image...');
+      try {
+        await loadImage(file);
+        loadedImagePixels = extractGrayscalePixels();
+        setStatus('Image ready. Press "Compress Image" to encode.');
+        compressButton.disabled = false;
+      } catch (error) {
+        console.error(error);
+        setStatus('Failed to load image. Try a different file.');
+        compressButton.disabled = true;
+      }
+    });
+
+    compressButton.addEventListener('click', () => {
+      handleCompress().catch((error) => {
+        console.error(error);
+        appendStatus(`Compression error: ${error.message}`);
+      });
+    });
+
+    iterateButton.addEventListener('click', iterateOnce);
+    iterate8Button.addEventListener('click', iterateEight);
+    resetButton.addEventListener('click', resetDecompressImage);
+
+    // Initialize decompression canvas with noise even before compression
+    resetDecompressImage();
+    compressButton.disabled = true;
+  </script>
+</body>
+</html>

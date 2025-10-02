@@ -1,0 +1,6 @@
+.venv/
+indices.npy
+Lenna.png
+reconstructed.png
+lenna_gray_f64.bin
+.DS_Store
