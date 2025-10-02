@@ -60,18 +60,24 @@
 </head>
 <body>
   <section>
-    <h2>Introduction</h2>
-    <h3>Mathematical View</h3>
+    <h2>Fractal Compression</h2>
+    <h3>Background </h3>
     <p>
-      Fractal compression models a grayscale image as a function \(f : [0,1]^2 \to [0,255]\) and seeks a finite set of contractive affine maps \(W_i\) acting on both spatial coordinates and intensity.
-      The decoded image is the unique attractor satisfying \(S = \bigcup_i W_i(S)\), ensured by the Banach fixed-point theorem because each \(W_i\) is contractive under a suitable metric.
+      We think of an image as a vector \( \mathcal{I} = [0,1]^n, n = H * W \) and consider functions on the set of images \( f : \mathcal{I} \to \mathcal{I} \).
+      In this context, f is a contraction if it satisfies \(|f(x) - f(y)| \leq k |x - y|\) for some \(k < 1\). Contractions have 
+      an interesting property that they have a unique fixed point, i.e. there exists a unique \(x^* \in \mathcal{I}\) such that \(f(x^*) = x^*\).
+      Furthmermore for any image \(x \in \mathcal{I}\), the sequence \(x, f(x), f(f(x)), \ldots\) converges to the fixed point \(x^*\).
+      The key idea of fractal compression is to find a contraction a contraction \(f\) for which the fixed point is as close as possible to the 
+      target image. 
+      If such a contraction can be, we can simply store the contraction instead of the image, since iterativly applying the contraction to 
+      any image will converge to the fixed point, i.e the target image.
+      In particular, of we can store such a contraction with less memory than the original image, we effecivelty compress the image into 
+      the contraction.
+      To be a bit more concrete, we subdivide the image into a grid of blocks and look for contractions \(f_i\) which cover the image.
     </p>
+    <h3>Implementation</h3>
     <p>
-      During decompression, we repeatedly apply the iterated function system to any starting image; the contraction property guarantees that the orbit converges toward \(S\), recreating the stored image even though individual maps are not surjective.
-    </p>
-    <h3>Image Blocks In Practice</h3>
-    <p>
-      In this demo we operate on 512×512 grayscale images by searching, for every 4×4 <em>range</em> block, an 8×8 <em>domain</em> block and an affine intensity fit \(x \mapsto c x + d\).
+      In this demo we operate on 512x512 grayscale images by searching, for every 4x4 <em>range</em> block, an 8x8 <em>domain</em> block and an affine intensity fit \(x \mapsto c x + d\).
       Each candidate domain block can be rotated or reflected using the eight symmetries of the square before being downsampled; we keep the combination that minimizes the mean squared error after applying contrast \(c\) and offset \(d\).
       The resulting mapping table is what the decompressor iterates, shrinking and rearranging blocks until the full image reappears.
     </p>

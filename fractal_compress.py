@@ -90,7 +90,7 @@ def main() -> None:
             )
 
     np.save(OUTPUT_PATH, pairs)
-
+    
 
 if __name__ == "__main__":
     main()
